@@ -18,5 +18,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cpr)
 
-add_executable(${PROJECT_NAME} main.cpp task.h)
+add_executable(
+        ${PROJECT_NAME}
+        main.cpp
+        task.h
+        check_peers.h
+        peer.h
+        torrent_file.h
+)
 target_link_libraries(${PROJECT_NAME} PUBLIC ${OPENSSL_LIBRARIES} cpr::cpr)
