@@ -1,18 +1,30 @@
-#include "task.h"
 #include "check_peers.h"
+#include "torrent_tracker.h"
 #include <cassert>
 #include <iostream>
 #include <filesystem>
+#include <random>
 
 namespace fs = std::filesystem;
 
+std::string RandomString(size_t length) {
+    std::random_device random;
+    std::string result;
+    result.reserve(length);
+    for (size_t i = 0; i < length; ++i) {
+        result.push_back(random() % ('Z' - 'A') + 'A');
+    }
+    return result;
+}
+
+const std::string PeerId = "TESTAPPDONTWORRY" + RandomString(4);
+
 void RequestPeers(const TorrentFile& tf) {
-    const std::string peerId = "TEST0APP1DONT2WORRY3";
-    assert(peerId.size() == 20);
+    assert(PeerId.size() == 20);
 
     std::cout << "Connecting to tracker " << tf.announce << std::endl;
     TorrentTracker tracker(tf.announce);
-    tracker.UpdatePeers(tf, peerId, 12345);
+    tracker.UpdatePeers(tf, PeerId, 12345);
 
     assert(!tracker.GetPeers().empty());
 
