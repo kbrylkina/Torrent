@@ -1,4 +1,5 @@
 #include "torrent_file.h"
+#include "byte_tools.h"
 #include <vector>
 #include <openssl/sha.h>
 #include <fstream>
@@ -94,9 +95,9 @@ TorrentFile LoadTorrentFile(const std::string& filename) {
                 else if(key == "pieces") {
                     size_t j;
                     for(j = 0; j + 20 < value.size(); j += 20) {
-                        torrent_.pieceHashes.push_back(value.substr(j, 20));
+                        torrent_.pieceHashes.push_back((value.substr(j, 20)));
                     }
-                    torrent_.pieceHashes.push_back(value.substr(j, value.size() - j));
+                    torrent_.pieceHashes.push_back((value.substr(j, value.size() - j)));
                 }
                 else if(key == "name") {
                     torrent_.name = value;
@@ -108,10 +109,6 @@ TorrentFile LoadTorrentFile(const std::string& filename) {
         }
     }   
     
-    info_hash_str = data_.substr(beg, en - beg + 1);
-    unsigned char hashes[20];
-    SHA1(reinterpret_cast<const unsigned char*>(info_hash_str.c_str()), info_hash_str.size(), hashes);
-    std::string str(reinterpret_cast<char*>(hashes), 20);
-    torrent_.infoHash = str;
+    torrent_.infoHash = CalculateSHA1(data_.substr(beg, en - beg + 1));
     return torrent_;
 }

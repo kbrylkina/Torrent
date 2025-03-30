@@ -24,6 +24,7 @@ TcpConnect::~TcpConnect() {
 }
 
 void TcpConnect::EstablishConnection() {
+    std::cout<<"TcpConnect::EstablishConnection start\n";
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -35,15 +36,17 @@ void TcpConnect::EstablishConnection() {
 
     int result = connect(sock_, (struct sockaddr *)&addr, sizeof(addr));
     if (result < 0) {
-        pollfd pol;
+        struct pollfd pol;
         pol.fd = sock_;
         pol.events = POLLOUT;
         if (poll(&pol, 1, connectTimeout_.count()) <= 0) {
-            throw std::runtime_error("Timeout");
+            throw std::runtime_error("TcpConnect::EstablishConnection Timeout");
         }
     }
 
-    fcntl(sock_, F_SETFL, flags);
+    flags = fcntl(sock_, F_GETFL, 0);
+    fcntl(sock_, F_SETFL, flags & ~O_NONBLOCK);
+    std::cout<<"TcpConnect::EstablishConnection completed\n";
 }
 
 void TcpConnect::SendData(const std::string& data) const {
@@ -51,6 +54,7 @@ void TcpConnect::SendData(const std::string& data) const {
 }
 
 std::string TcpConnect::ReceiveData(size_t bufferSize) const {
+    std::cout<<"TcpConnect::ReceiveData start\n";
     std::string data;
     size_t toRead = bufferSize;
     if (bufferSize == 0) {
@@ -62,6 +66,7 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const {
 
     data.resize(toRead);
     recv(sock_, &data[0], toRead, MSG_WAITALL);
+    std::cout<<"TcpConnect::ReceiveData completed\n";
     return data;
 }
 

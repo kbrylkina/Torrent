@@ -1,4 +1,6 @@
 #include "byte_tools.h"
+#include <openssl/sha.h>
+#include <vector>
 
 int BytesToInt(std::string_view bytes) {
     int result = 0;
@@ -8,4 +10,11 @@ int BytesToInt(std::string_view bytes) {
     | (static_cast<int>(static_cast<unsigned char>(bytes[3])));
 
     return result;
+}
+
+std::string CalculateSHA1(const std::string& msg) {
+    unsigned char hashes[20];
+    SHA1(reinterpret_cast<const unsigned char*>(msg.c_str()), msg.size(), hashes);
+    std::string str(reinterpret_cast<char*>(hashes), 20);
+    return str;
 }

@@ -37,8 +37,14 @@ void RequestPeers(const TorrentFile& tf) {
 }
 
 void TestTorrentFile(const fs::path& file) {
-    TorrentFile tf = LoadTorrentFile(file);
-    std::cout << "Loaded torrent file. " << tf.comment << std::endl;
+    TorrentFile tf;
+    try {
+        tf = LoadTorrentFile(file);
+        std::cout << "Loaded torrent file " << file << ". " << tf.comment << std::endl;
+    } catch (const std::invalid_argument& e) {
+        std::cerr << e.what() << std::endl;
+        return;
+    }
 
     RequestPeers(tf);
 }
