@@ -12,6 +12,18 @@ int BytesToInt(std::string_view bytes) {
     return result;
 }
 
+std::string IntToBytes(int64_t ints) {
+    std::string result;
+    result.resize(4);
+    size_t len = ints;
+
+    for (int i = 3; i >= 0; i--) {
+        result[i] = static_cast<char>(len & 255);
+        len >>= 8;
+    }
+    return result;
+}
+
 std::string CalculateSHA1(const std::string& msg) {
     unsigned char hashes[20];
     SHA1(reinterpret_cast<const unsigned char*>(msg.c_str()), msg.size(), hashes);

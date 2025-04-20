@@ -8,22 +8,21 @@
 
 using namespace std::chrono_literals;
 
-PeerConnect::PeerConnect(const Peer& peer, const TorrentFile& tf, std::string selfPeerId)
-    : tf_(tf), socket_(peer.ip, peer.port, 1000ms, 1000ms), selfPeerId_(selfPeerId), terminated_(false), choked_(true) {
+PeerConnect::PeerConnect(const Peer& peer, const TorrentFile& tf, std::string selfPeerId, PieceStorage& pieceStorage)
+    : tf_(tf), socket_(peer.ip, peer.port, 1000ms, 1000ms), selfPeerId_(selfPeerId), terminated_(false), choked_(true), pieceStorage_(pieceStorage) {
 }
 
 void PeerConnect::Run() {
     while (!terminated_) {
         if (EstablishConnection()) {
-            std::cout << "Connection established to peer" << std::endl;
+            std::cout << "Connection established to peer\n";
             MainLoop();
         } else {
-            std::cerr << "Cannot establish connection to peer" << std::endl;
+            std::cerr << "Cannot establish connection to peer\n";
             Terminate();
         }
     }
 }
-
 
 void PeerConnect::PerformHandshake() {
     socket_.EstablishConnection();
@@ -33,13 +32,14 @@ void PeerConnect::PerformHandshake() {
     std::string handshake = std::string(1, pstrlen) + pstr + reserved + tf_.infoHash + selfPeerId_;
 
     socket_.SendData(handshake);
+    std::cout<<"PeerConnect::PerformHandshake Sent handshake\n";
 
     std::string response = socket_.ReceiveData(68);
     if(response.substr(1, 19) != "BitTorrent protocol" || response[0] != '\x13') {
-        throw std::runtime_error("PeerConnect::PerformHandshake Handshake failed");
+        throw std::runtime_error("PeerConnect::PerformHandshake Handshake failed1");
     }
     if (response.substr(28, 20) != tf_.infoHash) {
-        throw std::runtime_error("PeerConnect::PerformHandshake Handshake failed: info_hash mismatch");
+        throw std::runtime_error("PeerConnect::PerformHandshake Handshake failed2: info_hash mismatch");
     }
 }
 
@@ -51,13 +51,15 @@ bool PeerConnect::EstablishConnection() {
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Failed to establish connection with peer " << socket_.GetIp() << ":" <<
-            socket_.GetPort() << " -- " << e.what() << std::endl;
+            socket_.GetPort() << " -- " << e.what() << "\n";
         return false;
     }
 }
 
 void PeerConnect::ReceiveBitfield() {
     std::string bitfieldMessage = socket_.ReceiveData();
+    std::cout<<"PeerConnect::ReceiveBitfield Received bitfield\n";
+    
     Message message = Message::Parse(bitfieldMessage);
     if (message.id == MessageId::BitField) {
         piecesAvailability_ = PeerPiecesAvailability(message.payload);
@@ -74,13 +76,83 @@ void PeerConnect::SendInterested() {
     socket_.SendData(interested.ToString());
 }
 
+void PeerConnect::RequestPiece() {
+    if (pieceInProgress_ == nullptr) {
+        pieceInProgress_ = pieceStorage_.GetNextPieceToDownload();
+        if (pieceInProgress_ == nullptr) {
+            std::cout << "PeerConnect::RequestPiece no pieces to request\n";
+            return;
+        }
+    }
+
+    Block* block = pieceInProgress_->FirstMissingBlock();
+    if (block == nullptr) {
+        std::cout << "PeerConnect::RequestPiece no missing blocks in this piece\n";
+        pieceInProgress_ = nullptr;
+        return;
+    }
+    std::cout<<"PeerConnect::RequestPiece Request piece "<<pieceInProgress_->GetIndex()<< " " << block->offset << " " << block->length << "\n";
+    std::string payload = IntToBytes(pieceInProgress_->GetIndex()) + 
+                          IntToBytes(block->offset) + 
+                          IntToBytes(block->length);
+    Message request = Message::Init(MessageId::Request, payload);
+    socket_.SendData(request.ToString());
+    block->status = Block::Status::Pending; 
+    pendingBlock_ = true;
+}
+
 void PeerConnect::Terminate() {
     std::cerr << "Terminate" << std::endl;
     terminated_ = true;
 }
 
 void PeerConnect::MainLoop() {
-    //ToDo
-    std::cout << "Dummy main loop" << std::endl;
-    Terminate();
+    while (!terminated_) {
+        std::string messageData = socket_.ReceiveData();
+        if (messageData.empty()) {
+            std::cout << "PeerConnect::MainLoop No data received, possibly connection lost\n";
+            continue;
+        }
+
+        Message message = Message::Parse(messageData);
+        if(message.id == MessageId::Piece) {
+            std::cout<<"PeerConnect::MainLoop Piece\n";
+            size_t index = BytesToInt(message.payload.substr(0, 4));
+            size_t offset = BytesToInt(message.payload.substr(4, 4));
+            pieceInProgress_->SaveBlock(offset, message.payload.substr(8));
+            if (pieceInProgress_->AllBlocksRetrieved()) {
+                std::cout<<"PeerConnect::MainLoop AllBlocksRetrieved\n";
+                if (pieceInProgress_->HashMatches()) {
+                    pieceStorage_.PieceProcessed(pieceInProgress_);
+                    std::cout << "Piece " << pieceInProgress_->GetIndex() << " downloaded and verified\n";
+                } else {
+                    std::cout << "Hash mismatch, resetting piece\n";
+                    pieceInProgress_->Reset();
+                }
+                pieceInProgress_ = nullptr;
+            }
+            pendingBlock_ = false;
+        }
+        else if(message.id == MessageId::Unchoke) {
+            std::cout<<"PeerConnect::MainLoop Unchoke\n";
+            choked_ = false;
+        }
+        else if(message.id == MessageId::Choke) {
+            std::cout<<"PeerConnect::MainLoop Choke\n";
+            choked_ = true;
+            Terminate();
+        }
+        else if(message.id == MessageId::Have) {
+            std::cout<<"PeerConnect::MainLoop Have\n";
+            size_t index = BytesToInt(message.payload.substr(0, 4));
+            piecesAvailability_.SetPieceAvailability(index);   
+        }
+        else {
+            std::cerr << "PeerConnect::MainLoop received unexpected message type: " << static_cast<int>(message.id) << "\n";
+        }
+
+        if (!choked_ && !pendingBlock_) {
+            RequestPiece();
+        }
+    }
 }

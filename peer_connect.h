@@ -3,6 +3,7 @@
 #include "tcp_connect.h"
 #include "peer.h"
 #include "torrent_file.h"
+#include "piece_storage.h"
 
 /*
  * Структура, хранящая информацию о доступности частей скачиваемого файла у данного пира
@@ -53,7 +54,7 @@ private:
  */
 class PeerConnect {
 public:
-    PeerConnect(const Peer& peer, const TorrentFile& tf, std::string selfPeerId);
+    PeerConnect(const Peer& peer, const TorrentFile& tf, std::string selfPeerId, PieceStorage& pieceStorage);
 
     /*
      * Основная функция, в которой будет происходить цикл общения с пиром.
@@ -62,7 +63,7 @@ public:
     void Run();
 
     void Terminate();
-protected:
+private:
     const TorrentFile& tf_;
     TcpConnect socket_;  // tcp-соединение с пиром
     const std::string selfPeerId_;  // наш id, которым представляется наш клиент
@@ -70,6 +71,9 @@ protected:
     PeerPiecesAvailability piecesAvailability_;
     bool terminated_;  // флаг, необходимый для завершения цикла общения с пиром
     bool choked_;  // https://wiki.theory.org/BitTorrentSpecification#Overview
+    PiecePtr pieceInProgress_;  // часть файла, с которой сейчас работаем
+    PieceStorage& pieceStorage_;  // отсюда берем новые части для скачивания
+    bool pendingBlock_;  // уже послали запрос на скачивание части файла и ждем ответ
 
     /*
      * Функция производит handshake.
@@ -102,5 +106,17 @@ protected:
      */
     void SendInterested();
 
-    virtual void MainLoop();
+    /*
+     * Функция отправляет пиру сообщение типа request. Это сообщение обозначает запрос части файла у пира.
+     * За одно сообщение запрашивается не часть целиком, а блок данных размером 2^14 байт или меньше.
+     * Если в данный момент мы не знаем, какую часть файла надо запросить у пира, то надо получить эту информацию у
+     * PieceStorage
+     */
+    void RequestPiece();
+
+    /*
+     * Основной цикл общения с пиром. Здесь мы ждем следующее сообщение от пира и обрабатываем его.
+     * Также, если мы не ждем в данный момент от пира содержимого части файла, то надо отправить соответствующий запрос
+     */
+    void MainLoop();
 };

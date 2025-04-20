@@ -1,6 +1,7 @@
 #pragma once
 
 #include "peer_connect.h"
+#include "piece_storage.h"
 #include "torrent_file.h"
 #include "peer.h"
 #include <iostream>
@@ -16,19 +17,31 @@ void CheckPeers(const TorrentFile& tf, const std::vector<Peer>& peers) {
     std::unordered_set<std::string> unique(infoHashes.begin(), infoHashes.end());
     assert(unique.size() == infoHashes.size());
 
-    size_t successfulConnections = 0;
+    PieceStorage pieces(tf);
+    if (pieces.QueueIsEmpty()) {
+        std::cerr << "Torrent file has been parsed wrong. No pieces described\n";
+    }
+    assert(!pieces.QueueIsEmpty());
+
     for (const Peer& peer : peers) {
-        PeerConnect peerConnect(peer, tf, PeerId);
+        PeerConnect peerConnect(peer, tf, PeerId, pieces);
         try {
             peerConnect.Run();
         } catch (const std::runtime_error& e) {
-            std::cerr << e.what() << std::endl;
+            std::cerr << e.what() << "\n";
+            continue;
+        } catch (const std::exception& e) {
+            std::cerr << e.what() << "\n";
+            continue;
+        } catch (...) {
+            std::cerr << "Unknown error\n";
             continue;
         }
-        ++successfulConnections;
+
+        if (pieces.QueueIsEmpty()) {
+            std::cout << "Successfully downloaded a piece of file\n";
+            break;
+        }
     }
-
-    std::cout << "Made " << successfulConnections << " successful connections" << std::endl;
-
-    assert(successfulConnections >= 0.2 * peers.size());
+    assert(pieces.QueueIsEmpty());
 }

@@ -24,7 +24,7 @@ TcpConnect::~TcpConnect() {
 }
 
 void TcpConnect::EstablishConnection() {
-    std::cout<<"TcpConnect::EstablishConnection start\n";
+    std::cout<<"TcpConnect::EstablishConnection begin\n";
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -46,7 +46,7 @@ void TcpConnect::EstablishConnection() {
 
     flags = fcntl(sock_, F_GETFL, 0);
     fcntl(sock_, F_SETFL, flags & ~O_NONBLOCK);
-    std::cout<<"TcpConnect::EstablishConnection completed\n";
+    std::cout<<"TcpConnect::EstablishConnection end\n";
 }
 
 void TcpConnect::SendData(const std::string& data) const {
@@ -54,19 +54,52 @@ void TcpConnect::SendData(const std::string& data) const {
 }
 
 std::string TcpConnect::ReceiveData(size_t bufferSize) const {
-    std::cout<<"TcpConnect::ReceiveData start\n";
-    std::string data;
-    size_t toRead = bufferSize;
-    if (bufferSize == 0) {
-        uint32_t length;
-        recv(sock_, &length, 4, MSG_WAITALL);
-        std::string_view string_v(reinterpret_cast<char*>(&length), sizeof(length));
-        toRead = BytesToInt(string_v);  
-    }
+    std::cout<<"TcpConnect::ReceiveData begin\n";
+    struct pollfd pol;
+    pol.fd = sock_;
+    pol.events = POLLIN;
 
-    data.resize(toRead);
-    recv(sock_, &data[0], toRead, MSG_WAITALL);
-    std::cout<<"TcpConnect::ReceiveData completed\n";
+    size_t len = 4;
+    if (bufferSize > 0) {
+        len = bufferSize;
+    } else {
+        std::string lenbuf(4, 0);
+        char *lenbufptr = &lenbuf[0];
+        while (len > 0) {
+            int ret = poll(&pol, 1, readTimeout_.count());
+            if (ret <= 0) {
+                throw std::runtime_error("TcpConnect::ReceiveData Timeout");
+            } 
+            else {
+                int n = recv(sock_, lenbufptr, len, 0);
+                if (n < 0) {
+                    throw std::runtime_error("TcpConnect::ReceiveData Failed to receive data");
+                }
+                lenbufptr += n;
+                len -= n;
+            }
+        }
+        len = BytesToInt(lenbuf);
+    }
+    std::string data(len, 0);
+    char *buf = &data[0];
+
+
+    while (len > 0) {
+        int ret = poll(&pol, 1, readTimeout_.count());
+        if (ret <= 0) {
+            throw std::runtime_error("TcpConnect::ReceiveData Timeout");
+        } 
+        else {
+            int n = recv(sock_, buf, len, 0);
+            if (n <= 0) {
+                throw std::runtime_error("TcpConnect::ReceiveData Connection closed");
+            }
+            buf += n;
+            len -= n;
+        }
+    }
+    std::cout<<"TcpConnect::ReceiveData end\n";
     return data;
 }
 
