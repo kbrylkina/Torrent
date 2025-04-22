@@ -9,10 +9,16 @@
 
 TorrentFile LoadTorrentFile(const std::string& filename) {
     std::ifstream file_(filename);
+    if (!file_.is_open()) {
+        throw std::runtime_error("LoadTorrentFile Failed to open the file: " + filename);
+    }
     std::stringstream s;
     std::string data_;
     s << file_.rdbuf();
     data_ = s.str();
+    if (data_.empty()) {
+        throw std::runtime_error("LoadTorrentFile File is empty or reading failed: " + filename);
+    }
     TorrentFile torrent_;
 
     size_t cnt = 0, beg = 0, en = 0, begl = 0, enl = 0;

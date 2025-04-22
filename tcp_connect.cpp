@@ -50,7 +50,18 @@ void TcpConnect::EstablishConnection() {
 }
 
 void TcpConnect::SendData(const std::string& data) const {
-    send(sock_, data.c_str(), data.size(), 0);
+    const char *buf = data.c_str();
+    int size = data.size();
+    while (size > 0) {
+        int sent = send(sock_, buf, size, 0);
+        if (sent < 0) {
+            throw std::runtime_error("TcpConnect::SendData Failed to send data");
+        }
+        buf += sent;
+        size -= sent;
+    }
+    std::cout<<"TcpConnect::SendData Sent data\n";
+
 }
 
 std::string TcpConnect::ReceiveData(size_t bufferSize) const {
@@ -62,7 +73,8 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const {
     size_t len = 4;
     if (bufferSize > 0) {
         len = bufferSize;
-    } else {
+    } 
+    else {
         std::string lenbuf(4, 0);
         char *lenbufptr = &lenbuf[0];
         while (len > 0) {
@@ -87,9 +99,11 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const {
 
     while (len > 0) {
         int ret = poll(&pol, 1, readTimeout_.count());
-        if (ret <= 0) {
-            throw std::runtime_error("TcpConnect::ReceiveData Timeout");
-        } 
+        if (ret == 0) {
+            throw std::runtime_error("TcpConnect::ReceiveData Timeout - no data available");
+        } else if (ret < 0) {
+            throw std::runtime_error("TcpConnect::ReceiveData Polling error");
+        }
         else {
             int n = recv(sock_, buf, len, 0);
             if (n <= 0) {

@@ -4,6 +4,7 @@
 #include "peer.h"
 #include "torrent_file.h"
 #include "piece_storage.h"
+#include <atomic>
 
 /*
  * Структура, хранящая информацию о доступности частей скачиваемого файла у данного пира
@@ -63,17 +64,24 @@ public:
     void Run();
 
     void Terminate();
+
+    /*
+     * Соединение не удалось установить или оно было разорвано в результате ошибки.
+     */
+    bool Failed() const;
+    
 private:
     const TorrentFile& tf_;
     TcpConnect socket_;  // tcp-соединение с пиром
     const std::string selfPeerId_;  // наш id, которым представляется наш клиент
     std::string peerId_;  // id пира, с которым мы общаемся в текущем соединении
     PeerPiecesAvailability piecesAvailability_;
-    bool terminated_;  // флаг, необходимый для завершения цикла общения с пиром
+    std::atomic<bool> terminated_;  // флаг, необходимый для завершения цикла общения с пиром
     bool choked_;  // https://wiki.theory.org/BitTorrentSpecification#Overview
-    PiecePtr pieceInProgress_;  // часть файла, с которой сейчас работаем
-    PieceStorage& pieceStorage_;  // отсюда берем новые части для скачивания
+    PiecePtr pieceInProgress_;
+    PieceStorage& pieceStorage_;
     bool pendingBlock_;  // уже послали запрос на скачивание части файла и ждем ответ
+    bool failed_;  // соединение не удалось установить или оно было разорвано в результате ошибки
 
     /*
      * Функция производит handshake.

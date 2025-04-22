@@ -9,17 +9,18 @@
 using namespace std::chrono_literals;
 
 PeerConnect::PeerConnect(const Peer& peer, const TorrentFile& tf, std::string selfPeerId, PieceStorage& pieceStorage)
-    : tf_(tf), socket_(peer.ip, peer.port, 1000ms, 1000ms), selfPeerId_(selfPeerId), terminated_(false), choked_(true), pieceStorage_(pieceStorage) {
+    : tf_(tf), socket_(peer.ip, peer.port, 1500ms, 1500ms), selfPeerId_(selfPeerId), terminated_(false), choked_(true), pieceStorage_(pieceStorage) {
 }
 
 void PeerConnect::Run() {
     while (!terminated_) {
         if (EstablishConnection()) {
-            std::cout << "Connection established to peer\n";
+            std::cout << "Connection established to peer" << std::endl;
             MainLoop();
         } else {
-            std::cerr << "Cannot establish connection to peer\n";
+            std::cout << "Cannot establish connection to peer" << std::endl;
             Terminate();
+            failed_ = true;
         }
     }
 }
@@ -44,14 +45,15 @@ void PeerConnect::PerformHandshake() {
 }
 
 bool PeerConnect::EstablishConnection() {
+    std::cout<<"PeerConnect::EstablishConnection\n";
     try {
         PerformHandshake();
         ReceiveBitfield();
         SendInterested();
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Failed to establish connection with peer " << socket_.GetIp() << ":" <<
-            socket_.GetPort() << " -- " << e.what() << "\n";
+        std::cout << "Failed to establish connection with peer " << socket_.GetIp() << ":" <<
+            socket_.GetPort() << " -- " << e.what() << std::endl;
         return false;
     }
 }
@@ -63,7 +65,8 @@ void PeerConnect::ReceiveBitfield() {
     Message message = Message::Parse(bitfieldMessage);
     if (message.id == MessageId::BitField) {
         piecesAvailability_ = PeerPiecesAvailability(message.payload);
-    } else if (message.id == MessageId::Unchoke) {
+    } 
+    else if (message.id == MessageId::Unchoke) {
         choked_ = false;
     }
     else {
@@ -72,6 +75,7 @@ void PeerConnect::ReceiveBitfield() {
 }
 
 void PeerConnect::SendInterested() {
+    std::cout<<"PeerConnect::SendInterested\n";
     Message interested = Message::Init(MessageId::Interested, "");
     socket_.SendData(interested.ToString());
 }
@@ -80,17 +84,18 @@ void PeerConnect::RequestPiece() {
     if (pieceInProgress_ == nullptr) {
         pieceInProgress_ = pieceStorage_.GetNextPieceToDownload();
         if (pieceInProgress_ == nullptr) {
-            std::cout << "PeerConnect::RequestPiece no pieces to request\n";
+            std::cout << "PeerConnect::RequestPiece no pieces to request" << std::endl;
             return;
         }
     }
 
     Block* block = pieceInProgress_->FirstMissingBlock();
     if (block == nullptr) {
-        std::cout << "PeerConnect::RequestPiece no missing blocks in this piece\n";
+        std::cout << "PeerConnect::RequestPiece no missing blocks in this piece." << std::endl;
         pieceInProgress_ = nullptr;
         return;
     }
+    
     std::cout<<"PeerConnect::RequestPiece Request piece "<<pieceInProgress_->GetIndex()<< " " << block->offset << " " << block->length << "\n";
     std::string payload = IntToBytes(pieceInProgress_->GetIndex()) + 
                           IntToBytes(block->offset) + 
@@ -99,18 +104,30 @@ void PeerConnect::RequestPiece() {
     socket_.SendData(request.ToString());
     block->status = Block::Status::Pending; 
     pendingBlock_ = true;
+    std::cout<<"PeerConnect::RequestPiece Request piece "<<pieceInProgress_->GetIndex()<< " " << block->offset << " " << block->length << " end\n";
 }
 
 void PeerConnect::Terminate() {
-    std::cerr << "Terminate" << std::endl;
+    std::cout << "Terminate\n";
     terminated_ = true;
 }
 
+bool PeerConnect::Failed() const {
+    return failed_;
+}
+
 void PeerConnect::MainLoop() {
+    std::cout<<"PeerConnect::MainLoop begin\n";
     while (!terminated_) {
+        if (pieceStorage_.QueueIsEmpty()) {
+            std::cout << "PeerConnect::MainLoop QueueIsEmpty Terminate\n";
+            Terminate();
+            continue;
+        }
+
         std::string messageData = socket_.ReceiveData();
         if (messageData.empty()) {
-            std::cout << "PeerConnect::MainLoop No data received, possibly connection lost\n";
+            std::cout << "PeerConnect::MainLoop No data received, possibly connection lost" << std::endl;
             continue;
         }
 
@@ -124,9 +141,9 @@ void PeerConnect::MainLoop() {
                 std::cout<<"PeerConnect::MainLoop AllBlocksRetrieved\n";
                 if (pieceInProgress_->HashMatches()) {
                     pieceStorage_.PieceProcessed(pieceInProgress_);
-                    std::cout << "Piece " << pieceInProgress_->GetIndex() << " downloaded and verified\n";
+                    std::cout << "PeerConnect::MainLoop Piece " << pieceInProgress_->GetIndex() << " downloaded and verified" << std::endl;
                 } else {
-                    std::cout << "Hash mismatch, resetting piece\n";
+                    std::cout << "PeerConnect::MainLoop Hash mismatch, resetting piece" << std::endl;
                     pieceInProgress_->Reset();
                 }
                 pieceInProgress_ = nullptr;
@@ -148,11 +165,13 @@ void PeerConnect::MainLoop() {
             piecesAvailability_.SetPieceAvailability(index);   
         }
         else {
-            std::cerr << "PeerConnect::MainLoop received unexpected message type: " << static_cast<int>(message.id) << "\n";
+            std::cout << "PeerConnect::MainLoop received unexpected message type: " << static_cast<int>(message.id) << std::endl;
         }
 
         if (!choked_ && !pendingBlock_) {
+            std::cout<<"PeerConnect::MainLoop before RequestPiece\n";
             RequestPiece();
         }
     }
+    std::cout<<"PeerConnect::MainLoop end\n";
 }
